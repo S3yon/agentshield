@@ -332,6 +332,12 @@ function scanClaudeRoot(
       }
       if (entryStat.isFile()) {
         addDiscoveredFile(scanRoot, entryPath, inferType(entry, type), files, seenFiles);
+      } else if (type === "skill-md" && entryStat.isDirectory()) {
+        // Skills use the skills/<name>/SKILL.md layout
+        const skillPath = join(entryPath, "SKILL.md");
+        if (statOrNull(skillPath)?.isFile()) {
+          addDiscoveredFile(scanRoot, skillPath, "skill-md", files, seenFiles);
+        }
       }
     }
   }
