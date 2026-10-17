@@ -135,6 +135,20 @@ function readSymlinkTarget(path: string): string {
   }
 }
 
+function recordIfDangling(
+  scanRoot: string,
+  path: string,
+  type: ConfigFileType,
+  danglingSymlinks: DanglingSymlink[]
+): void {
+  if (!isDanglingSymlink(path)) return;
+  danglingSymlinks.push({
+    path: toPosixPath(relative(scanRoot, path)),
+    target: readSymlinkTarget(path),
+    type,
+  });
+}
+
 function walkForClaudeRoots(
   scanRoot: string,
   dirPath: string,
@@ -321,13 +335,7 @@ function scanClaudeRoot(
       const entryPath = join(dirPath, entry);
       const entryStat = statOrNull(entryPath);
       if (entryStat === null) {
-        if (isDanglingSymlink(entryPath)) {
-          danglingSymlinks.push({
-            path: toPosixPath(relative(scanRoot, entryPath)),
-            target: readSymlinkTarget(entryPath),
-            type,
-          });
-        }
+        recordIfDangling(scanRoot, entryPath, type, danglingSymlinks);
         continue;
       }
       if (entryStat.isFile()) {
@@ -335,8 +343,11 @@ function scanClaudeRoot(
       } else if (type === "skill-md" && entryStat.isDirectory()) {
         // Skills use the skills/<name>/SKILL.md layout
         const skillPath = join(entryPath, "SKILL.md");
-        if (statOrNull(skillPath)?.isFile()) {
+        const skillStat = statOrNull(skillPath);
+        if (skillStat?.isFile()) {
           addDiscoveredFile(scanRoot, skillPath, "skill-md", files, seenFiles);
+        } else if (skillStat === null) {
+          recordIfDangling(scanRoot, skillPath, type, danglingSymlinks);
         }
       }
     }

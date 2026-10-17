@@ -616,6 +616,27 @@ describe("discoverConfigFiles", () => {
   );
 
   it.skipIf(process.platform === "win32")(
+    "records a dangling SKILL.md symlink inside a skill directory",
+    () => {
+      const dir = createTempDir();
+      mkdirSync(join(dir, "skills", "broken"), { recursive: true });
+      mkdirSync(join(dir, "skills", "empty"), { recursive: true });
+      symlinkSync(join(dir, "nonexistent", "SKILL.md"), join(dir, "skills", "broken", "SKILL.md"));
+
+      const result = discoverConfigFiles(dir);
+
+      expect(result.files.some((f) => f.path.startsWith("skills/"))).toBe(false);
+      expect(result.danglingSymlinks).toEqual([
+        {
+          path: "skills/broken/SKILL.md",
+          target: join(dir, "nonexistent", "SKILL.md"),
+          type: "skill-md",
+        },
+      ]);
+    }
+  );
+
+  it.skipIf(process.platform === "win32")(
     "skips dangling symlinks in other config subdirectories too",
     () => {
       const dir = createTempDir();
