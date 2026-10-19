@@ -89,7 +89,6 @@ const PROJECT_ROOT_HOOK_VARS = new Set([
  */
 export function discoverConfigFiles(rootPath: string): ScanTarget {
   const files: ConfigFile[] = [];
-  const danglingSymlinks: DanglingSymlink[] = [];
   const seenFiles = new Set<string>();
   const claudeRoots = new Set<string>([rootPath]);
   const exampleClaudeFiles = new Set<string>();
@@ -100,9 +99,9 @@ export function discoverConfigFiles(rootPath: string): ScanTarget {
     addDiscoveredFile(rootPath, exampleClaudeFile, "claude-md", files, seenFiles);
   }
 
-  for (const claudeRoot of [...claudeRoots].sort()) {
-    scanClaudeRoot(rootPath, claudeRoot, files, seenFiles, danglingSymlinks);
-  }
+  const danglingSymlinks: ReadonlyArray<DanglingSymlink> = [...claudeRoots]
+    .sort()
+    .flatMap((claudeRoot) => scanClaudeRoot(rootPath, claudeRoot, files, seenFiles));
 
   return { path: rootPath, files, danglingSymlinks };
 }
@@ -138,15 +137,14 @@ function readSymlinkTarget(path: string): string {
 function recordIfDangling(
   scanRoot: string,
   path: string,
-  type: ConfigFileType,
-  danglingSymlinks: DanglingSymlink[]
-): void {
-  if (!isDanglingSymlink(path)) return;
-  danglingSymlinks.push({
+  type: ConfigFileType
+): DanglingSymlink | null {
+  if (!isDanglingSymlink(path)) return null;
+  return {
     path: toPosixPath(relative(scanRoot, path)),
     target: readSymlinkTarget(path),
     type,
-  });
+  };
 }
 
 function walkForClaudeRoots(
@@ -212,9 +210,8 @@ function scanClaudeRoot(
   scanRoot: string,
   claudeRoot: string,
   files: ConfigFile[],
-  seenFiles: Set<string>,
-  danglingSymlinks: DanglingSymlink[]
-): void {
+  seenFiles: Set<string>
+): ReadonlyArray<DanglingSymlink> {
   // Direct config files
   const directFiles: ReadonlyArray<[string, ConfigFileType]> = [
     ["CLAUDE.md", "claude-md"],
@@ -326,6 +323,7 @@ function scanClaudeRoot(
     [".codex/agents", "codex-toml"],
   ];
 
+  let danglingSymlinks: ReadonlyArray<DanglingSymlink> = [];
   for (const [subdir, type] of subdirs) {
     const dirPath = join(claudeRoot, subdir);
     if (!statOrNull(dirPath)?.isDirectory()) continue;
@@ -335,7 +333,8 @@ function scanClaudeRoot(
       const entryPath = join(dirPath, entry);
       const entryStat = statOrNull(entryPath);
       if (entryStat === null) {
-        recordIfDangling(scanRoot, entryPath, type, danglingSymlinks);
+        const dangling = recordIfDangling(scanRoot, entryPath, type);
+        if (dangling !== null) danglingSymlinks = [...danglingSymlinks, dangling];
         continue;
       }
       if (entryStat.isFile()) {
@@ -347,7 +346,8 @@ function scanClaudeRoot(
         if (skillStat?.isFile()) {
           addDiscoveredFile(scanRoot, skillPath, "skill-md", files, seenFiles);
         } else if (skillStat === null) {
-          recordIfDangling(scanRoot, skillPath, type, danglingSymlinks);
+          const dangling = recordIfDangling(scanRoot, skillPath, type);
+          if (dangling !== null) danglingSymlinks = [...danglingSymlinks, dangling];
         }
       }
     }
@@ -355,6 +355,7 @@ function scanClaudeRoot(
 
   discoverHermesProfiles(scanRoot, claudeRoot, files, seenFiles);
   discoverReferencedHookScripts(scanRoot, claudeRoot, files, seenFiles);
+  return danglingSymlinks;
 }
 
 /**
